@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+import socket
+import sys
+import ssl
+import math
+
+port = 27998
+
+def main():
+    # Create a TCP socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print "Socket created"
+    # connect to the socket import
+    server_address = ('cs5700f16.css.neu.edu', 27998)
+    sock.bind(server_address)
+    print "Socket  binded"
+    sock.listen(1)
+    print"Socket listened"
+    while True:
+        connection, client_address = sock.accept()
+        "Socket accepted"
+        sys.exit(1)
+
+# does the calculation return from the server
+def calculate(x, op, y):
+    # check syntax
+    try:
+        x = int(x)
+        y = int(y)
+    except ValueError:
+        s.close()
+        sys.exit(1)
+    # does the given operation
+    if op == '+':
+        return str(x+y)
+    elif op == '*':
+        return str(x*y)
+    elif op == '-':
+        return str(x-y)
+    elif op == "/":
+        return str(x//y)
+    # wrong operator
+    else:
+        s.close()
+        sys.exit(1)
+
+main()
