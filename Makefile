@@ -1,2 +1,2 @@
 all:
-		chmod +x client
+	chmod 700 client
