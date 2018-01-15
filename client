@@ -39,22 +39,26 @@ def main():
 
 	# create a TCP socket
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	print "Socket created"
 	# connect to the server
 	server_addr = (args.hostname, args.port)
 	sock.connect(server_addr)
-	print "connected successfully"
 	# send cs3700spring2018 HELLO [your NEU ID]\n message to the server
 	hello_msg = "cs3700spring2018 HELLO 001280266\n"
 	sock.send(hello_msg.encode('ascii'))
 	# receive cs3700spring2018 STATUS [num] [operator] [num]\n from server
 	status_msg = sock.recv(256).decode('ascii')
-	print status_msg
 	# keep checking if it is a status message then do calculation
 	while "STATUS" in status_msg:
 		solution = calculate(status_msg)
-		print solution
 		sock.send(solution.encode('ascii'))
 		status_msg = sock.recv(256).decode('ascii')
+	# "Unknown_Husky_ID" if server does not recognize NEU ID
+	if "Unknown_Husky_ID" in status_msg:
+		print "Husky ID unknown to server"
+	# receive cs3700spring2018 [a 64 byte secret flag] BYE\n from server
+	last_msg = status_msg.split(" ")
+	secret = last_msg[1]
+	print secret
+	sys.exit(1) 
 
 main()
