@@ -1,48 +1,60 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 
 import socket
 import sys
-import ssl
-import math
+import argparse
 
-port = 27998
+def calculate(expression):
+	# parse the expression
+	exp = expression.split(" ")
+	first = exp[2]
+	op = exp[3]
+	second = exp[4]
+	answer = 0
+	# calculate the expression
+	if op == '+':
+		answer = int(first)+int(second)
+	elif op == '-':
+		answer = int(first)-int(second)
+	elif op == '*':
+		answer = int(first)*int(second)
+	elif op == '/':
+		answer = int(first)//int(second)
+	# return cs3700spring2018 [the solution]\n
+	return "cs3700spring2018 {}\n".format(answer)
 
 def main():
-    # Create a TCP socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print "Socket created"
-    # connect to the socket import
-    server_address = ('cs5700f16.css.neu.edu', 27998)
-    sock.bind(server_address)
-    print "Socket  binded"
-    sock.listen(1)
-    print"Socket listened"
-    while True:
-        connection, client_address = sock.accept()
-        "Socket accepted"
-        sys.exit(1)
+	# parse arguments
+	# ./client <-p port> <-s> [hostname] [NEU ID]
+	myparser = argparse.ArgumentParser()
+	myparser.add_argument('-p', dest='port', type=int, help='port number')
+	myparser.add_argument('-s', dest='ssl', help='user ssl socket connection')
+	myparser.add_argument('hostname')
+	myparser.add_argument('neuid')
+	args = myparser.parse_args()
 
-# does the calculation return from the server
-def calculate(x, op, y):
-    # check syntax
-    try:
-        x = int(x)
-        y = int(y)
-    except ValueError:
-        s.close()
-        sys.exit(1)
-    # does the given operation
-    if op == '+':
-        return str(x+y)
-    elif op == '*':
-        return str(x*y)
-    elif op == '-':
-        return str(x-y)
-    elif op == "/":
-        return str(x//y)
-    # wrong operator
-    else:
-        s.close()
-        sys.exit(1)
+	# if port is not specified use 27998
+	if args.port is None:
+		args.port = 27998
+
+	# create a TCP socket
+	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	print "Socket created"
+	# connect to the server
+	server_addr = (args.hostname, args.port)
+	sock.connect(server_addr)
+	print "connected successfully"
+	# send cs3700spring2018 HELLO [your NEU ID]\n message to the server
+	hello_msg = "cs3700spring2018 HELLO 001280266\n"
+	sock.send(hello_msg.encode('ascii'))
+	# receive cs3700spring2018 STATUS [num] [operator] [num]\n from server
+	status_msg = sock.recv(256).decode('ascii')
+	print status_msg
+	# keep checking if it is a status message then do calculation
+	while "STATUS" in status_msg:
+		solution = calculate(status_msg)
+		print solution
+		sock.send(solution.encode('ascii'))
+		status_msg = sock.recv(256).decode('ascii')
 
 main()
