@@ -41,7 +41,11 @@ def main():
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	# connect to the server
 	server_addr = (args.hostname, args.port)
-	sock.connect(server_addr)
+	try:
+		sock.connect(server_addr)
+	except sock.error as errorMessage:
+		print "Connection error. Exit now!"
+		sys.exit(1)
 	# send cs3700spring2018 HELLO [your NEU ID]\n message to the server
 	hello_msg = "cs3700spring2018 HELLO 001280266\n"
 	sock.send(hello_msg.encode('ascii'))
@@ -56,6 +60,8 @@ def main():
 	if "Unknown_Husky_ID" in status_msg:
 		print "Husky ID unknown to server"
 	# receive cs3700spring2018 [a 64 byte secret flag] BYE\n from server
+	if "BYE" not in status_msg:
+		sys.exit(1)
 	last_msg = status_msg.split(" ")
 	secret = last_msg[1]
 	print secret
