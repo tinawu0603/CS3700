@@ -1,0 +1,17 @@
+#!/usr/bin/python
+
+from Scraper import Scraper
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('username')
+parser.add_argument('password')
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+
+    s = Scraper(args.username, args.password)
+    flags = s.run()
+
+    s.close()
