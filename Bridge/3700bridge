@@ -1,0 +1,221 @@
+#!/usr/bin/python -u
+# The -u makes output unbuffered, so it will show up immediately
+import sys
+import socket
+import select
+import json
+import time
+
+
+# pads the name with null bytes at the end
+def pad(name):
+    result = '\0' + name
+    while len(result) < 108:
+        result += '\0'
+    return result
+
+
+# gets time in milliseconds
+def getTime():
+    return int(time.time() * 1000)
+
+
+# class to represent a Bridge
+class Bridge:
+    def __init__(self, bid):
+        self.bid = bid
+        self.LANs = list(set(sys.argv[2:]))
+        self.ports = {}
+        self.forwardingTable = {} # src: {time, socket}
+        self.bpduTable = {} # bid : {time, socket}
+        self.cost = 0 # distance to the root
+        self.root = bid # root of the tree
+        self.next = None # next bridge to the root
+        self.nextSocket = None # port for next hop to the root
+        self.sockets = []
+        self.closed = []
+        # connect to all the LANs
+        for l in range(len(self.LANs)):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            s.connect(pad(self.LANs[l]))
+            self.sockets.append(s)
+        print('Bridge {} starting up'.format(self.bid))
+        self.broadcast()
+        # timeouts
+        self.bpduTimeout = getTime()
+        self.dataTimeout = getTime()
+        self.broadcastTimeout = getTime()
+        self.bridging()
+
+    # Handling messages and timeouts
+    def bridging(self):
+        while True:
+            ready, ignore1, ignore2 = select.select(self.sockets, [], [], 0.1)
+
+            # clean data table after 5 seconds
+            if getTime() - self.dataTimeout > 5000:
+                self.flush_data()
+                self.dataTimeout = getTime()
+            # clean bpdu table after .75 seconds
+            if getTime() - self.bpduTimeout > 750:
+                self.flush_bpdu()
+                self.bpduTimeout = getTime()
+            # broadcast every .5 seconds
+            if getTime() - self.broadcastTimeout > 500:
+                self.broadcast()
+                self.broadcastTimeout = getTime()
+
+            # begin receiving data
+            for sock in ready:
+                raw_data = sock.recv(1500)
+                json_data = json.loads(raw_data)
+                # bpdu or data
+                if json_data['type'] == 'bpdu':
+                    self.receive_bpdu(json_data, sock)
+                # makes sure socket is not closed
+                elif json_data['type'] == 'data' and sock not in self.closed:
+                    self.receive_data(json_data, sock)
+
+    # creates a BPDU message and sends the message through the given socket and destination
+    def send_bpdu(self, sock, dest):
+        keep_open = self.nextSocket == sock
+        msg = {'id': self.bid, 'root': self.root, 'cost': self.cost, 'next': self.next, 'keep-open': keep_open}
+        raw_data = {'source': self.bid, 'dest': dest, 'type': 'bpdu', 'message': msg}
+        json_data = json.dumps(raw_data)
+        sock.send(json_data)
+
+    # broadcast BPDUs
+    def broadcast(self):
+        for s in self.sockets:
+            self.send_bpdu(s, 'ffff')
+
+    # updates the root of this bridge
+    def update_root(self, root, cost, nxt, next_sock):
+        self.root = root
+        self.cost = cost
+        self.next = nxt
+        self.nextSocket = next_sock
+        root_port = None
+        if self.nextSocket in self.sockets:
+            root_port = self.sockets.index(self.nextSocket)
+        print('New root: {}/{}'.format(self.bid, root_port))
+        self.print_designated()
+        # reset forwarding table
+        self.forwardingTable.clear()
+        self.closed = []
+
+    # prints all the designated ports on this bridge
+    def print_designated(self):
+        designated = []
+        idx = 0
+        for s in self.sockets:
+            # if socket is not root port or closed
+            if s != self.nextSocket and s not in self.closed:
+                designated.append(idx)
+            idx += 1
+        print('Bridge {} designated ports: {}'.format(self.bid, designated))
+
+    # removes all expired data entries in the forwarding table
+    def flush_data(self):
+        for key in self.forwardingTable.keys():
+            # safeguard: deleting entries from dictionary may mutate the dictionary
+            if key in self.forwardingTable:
+                value = self.forwardingTable[key]
+                if getTime() - int(value['time']) > 5000:
+                    del self.forwardingTable[key]
+                    print('Host {} has timed out. Have not received data in 5sec.'.format(key))
+
+    # removes all expired bpdu and restart spanning tree if there's a change
+    def flush_bpdu(self):
+        for key in self.bpduTable.keys():
+            # safeguard: deleting entries from dictionary may mutate the dictionary
+            if key in self.bpduTable:
+                value = self.bpduTable[key]
+                # bpdu entries expire after .75 seconds
+                if getTime() - int(value['time']) > 750:
+                    del self.bpduTable[key]
+                    print('Bridge {} has timed out. Have not received a BPDU in 750ms.'.format(key))
+                    # if next bridge timed out, redo spanning tree
+                    if key == self.next:
+                        self.update_root(self.bid, 0, None, None)
+                        self.bpduTable.clear()
+                    # clear forwarding table
+                    else:
+                        self.forwardingTable.clear()
+                    self.broadcast()
+
+    def receive_bpdu(self, json_data, sock):
+        msg = json_data['message']
+        # add received bpdu message to the bpdu table
+        self.bpduTable[msg['id']] = {'time': getTime(), 'socket': sock}
+
+        # SPANNING TREE HERE WE GO!!
+
+        # if the message is from the next bridge
+        if msg['id'] == self.next:
+            # if there is a root change
+            if msg['root'] > self.root:
+                # update root bridge to me if I have a lower id
+                if msg['root'] > self.bid:
+                    self.update_root(self.bid, 0, None, None)
+                    self.broadcast()
+                    return
+                # update root bridge to next bridge
+                elif msg['root'] < self.bid:
+                    self.update_root(msg['root'], msg['cost'] + 1, msg['id'], sock)
+                    self.broadcast()
+                    return
+        # if received root is same as my root
+        if msg['root'] == self.root:
+            # makes sure bpdu is not from next or prev
+            if sock != self.nextSocket and not msg['keep-open']:
+                # if received id is less than my bid, close port
+                if msg['id'] < self.bid and sock not in self.closed:
+                    self.closed.append(sock)
+                    self.print_designated()
+                    print('Disabled port: {}/{}'.format(self.bid, self.sockets.index(sock)))
+        # if received root is not the same as my root
+        else:
+            # if received root is less than my root, update to received
+            if msg['root'] < self.root:
+                self.update_root(msg['root'], msg['cost'] + 1, msg['id'], sock)
+                self.broadcast()
+            # I have a better path, notify
+            elif msg['root'] > self.root:
+                dest = None
+                for key in self.bpduTable:
+                    if self.bpduTable[key]['socket'] == sock:
+                        dest = key
+                self.send_bpdu(sock, dest)
+
+    def receive_data(self, json_data, sock):
+        print('Received message {} on port {} from {} to {}'
+              .format(json_data['message']['id'], self.sockets.index(sock),
+                      json.dumps(json_data['source']), json.dumps(json_data['dest'])))
+        entry = {'time': getTime(), 'socket': sock}
+        # add entry to forwarding table
+        self.forwardingTable[json_data['source']] = entry
+        dest = self.forwardingTable.get(json_data['dest'], None)
+        dest_socket = None
+        # if destination exists in forwarding table
+        if dest:
+            dest_socket = dest['socket']
+        # if message is received on destination socket, ignore and move on
+        if sock == dest_socket:
+            print('Not forwarding message {}'.format(json_data['message']['id']))
+        # if destination is known and open
+        elif dest_socket and dest_socket not in self.closed:
+            print('Forwarding message {} to port {}'.format(json_data['message']['id'], self.sockets.index(dest_socket)))
+            dest_socket.send(json.dumps(json_data))
+        # broadcast message if we don't know the destination or destination port is closed, find another route
+        elif dest_socket in self.closed or not dest:
+            print('Broadcasting message {} to all ports'.format(json_data['message']['id']))
+            for s in self.sockets:
+                # only send to open sockets and not to the received socket
+                if s not in self.closed and s != sock:
+                    s.send(json.dumps(json_data))
+
+
+if __name__ == "__main__":
+    id = sys.argv[1]
+    bridge = Bridge(id)
