@@ -1,4 +1,4 @@
-# CS3700 Project 1: Simple Client
+# CS3700: Simple Client
 
 ## Project Overview
 I implemented a client program which communicates with a server using sockets. The server will ask my program to solve hundreds of simple mathematical expressions. If my program successfully solves all the expressions, a *secret flag* will be returned.
