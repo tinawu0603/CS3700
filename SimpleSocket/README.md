@@ -1,4 +1,9 @@
-# CS3700 Project 1
+# CS3700 Project 1: Simple Client
+
+## Project Overview
+I implemented a client program which communicates with a server using sockets. The server will ask my program to solve hundreds of simple mathematical expressions. If my program successfully solves all the expressions, a *secret flag* will be returned.
+
+## Project Response
 
 ### High level approach
 My high level approach for this project is to think about an in-person communication. Once contact is made, whether eye-contact for in-person or socket connection for servers and clients, one side sends an acknowledgement message. Then communication is continued until one side decides to end the communication. In the project, this communication is depicted with the initial HELLO message and then the continuous STATUS messages and ends with a BYE message.
